@@ -67,3 +67,12 @@ class DocumentDeleteView(generics.DestroyAPIView):
 
     def get_queryset(self):
         return Document.objects.filter(owner=self.request.user)
+
+
+class DocumentUpdateView(generics.UpdateAPIView):
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        return Document.objects.filter(owner=self.request.user)

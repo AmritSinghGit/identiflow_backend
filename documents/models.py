@@ -12,7 +12,7 @@ class Document(models.Model):
 
     title = models.CharField(max_length=255, blank=True)
     document_type = models.CharField(max_length=100, blank=True)
-
+    belongs_to = models.CharField(max_length=255, blank=True)
     extracted_text = models.TextField(blank=True)
 
     is_verified = models.BooleanField(default=False)
