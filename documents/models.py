@@ -17,6 +17,8 @@ class Document(models.Model):
 
     is_verified = models.BooleanField(default=False)
 
+    file_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
