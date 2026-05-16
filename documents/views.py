@@ -8,7 +8,7 @@ import hashlib
 class DocumentUploadView(generics.CreateAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
-    permission_classes = [permissions.AllowAny]  # keep simple for now
+    permission_classes = [permissions.IsAuthenticated]  # keep simple for now
 
     def create(self, request, *args, **kwargs):
         file = request.FILES.get('file')
