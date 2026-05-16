@@ -51,3 +51,13 @@ class UserDocumentListView(generics.ListAPIView):
 
     def get_queryset(self):
         return Document.objects.filter(owner=self.request.user).order_by('-created_at')
+
+class DocumentDetailView(generics.RetrieveAPIView):
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'   # ✅ ADD THIS
+
+    def get_queryset(self):
+        return Document.objects.filter(owner=self.request.user)
+
+
