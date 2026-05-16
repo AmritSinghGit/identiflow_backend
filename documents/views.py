@@ -1,4 +1,5 @@
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
 from .models import Document
 from .serializers import DocumentSerializer
 import hashlib
@@ -7,10 +8,16 @@ import hashlib
 class DocumentUploadView(generics.CreateAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.AllowAny]  # keep simple for now
 
-    def perform_create(self, serializer):
-        file = self.request.FILES.get('file')
+    def create(self, request, *args, **kwargs):
+        file = request.FILES.get('file')
+
+        if not file:
+            return Response(
+                {"error": "No file provided"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         hasher = hashlib.sha256()
         for chunk in file.chunks():
@@ -18,4 +25,22 @@ class DocumentUploadView(generics.CreateAPIView):
 
         file_hash = hasher.hexdigest()
 
-        serializer.save(owner=self.request.user, file_hash=file_hash)
+        existing_document = Document.objects.filter(
+            owner=request.user,
+            file_hash=file_hash
+        ).first()
+
+        if existing_document:
+            return Response(
+                {
+                    "message": "Duplicate document detected",
+                    "existing_document_id": str(existing_document.id)
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(owner=request.user, file_hash=file_hash)
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
