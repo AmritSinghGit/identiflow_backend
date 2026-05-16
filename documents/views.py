@@ -44,3 +44,10 @@ class DocumentUploadView(generics.CreateAPIView):
         serializer.save(owner=request.user, file_hash=file_hash)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+class UserDocumentListView(generics.ListAPIView):
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Document.objects.filter(owner=self.request.user).order_by('-created_at')
