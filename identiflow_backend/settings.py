@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'documents',
     'rest_framework',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -138,4 +139,17 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Identiflow API',
+    'DESCRIPTION': 'Secure document management system',
+    'VERSION': '1.0.0',
 }
