@@ -13,4 +13,8 @@ class DocumentSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
             'file'
+            'owner_name',
+            'document_category',
+            'extracted_data',
+            'processing_status',
         ]
