@@ -1,21 +1,31 @@
 """
 📦 documents/learning.py
 
-🧠 LEARNING ENGINE (FOUNDATION)
+🧠 LEARNING ENGINE (CORE INTELLIGENCE LAYER)
 
-This module captures VERIFIED data and converts it into
-structured intelligence for future AI improvement.
+This module is responsible for converting VERIFIED document data
+into structured intelligence for future AI improvements.
 
-🚨 GOLDEN RULE:
-We ONLY learn from VERIFIED documents.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎯 OBJECTIVES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✔ Learn ONLY from verified data
+✔ Build category intelligence
+✔ Discover and evolve document fields
+✔ Generate high-quality training dataset
+✔ Enable future ML + AI improvements
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 GOLDEN RULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NEVER learn from unverified data.
 This ensures:
-✔ No garbage learning
+✔ No noise
+✔ No corrupted learning
 ✔ High-quality dataset
-✔ Future ML readiness
 """
 
-from .models import Document, DocumentCategory, DocumentField
+from .models import DocumentCategory, DocumentField
 
 
 # =========================================================
@@ -23,33 +33,38 @@ from .models import Document, DocumentCategory, DocumentField
 # =========================================================
 def record_learning(document):
     """
-    Called AFTER:
-    - reviewer approval
-    - OR trusted user confirmation
+    Entry point for learning system.
 
-    This function builds long-term intelligence.
+    Called ONLY AFTER:
+    ✔ Reviewer approval
+    ✔ OR trusted system verification
+
+    This is where intelligence starts accumulating.
     """
 
     # -----------------------------------------------------
-    # 🚫 SAFETY CHECK
+    # 🚫 SAFETY CHECK — DO NOT LEARN FROM NOISE
     # -----------------------------------------------------
     if not document.is_verified:
-        return  # NEVER learn from unverified data
+        return
 
-    final_data = document.reviewed_data or {}
+    final_data = document.reviewed_data
+
+    if not isinstance(final_data, dict):
+        return  # 🚫 skip invalid data safely
 
     # -----------------------------------------------------
     # 📊 CATEGORY LEARNING
     # -----------------------------------------------------
-    update_category_learning(document)
+    learn_category(document)
 
     # -----------------------------------------------------
-    # 🧩 FIELD LEARNING
+    # 🧩 FIELD LEARNING (DYNAMIC SCHEMA)
     # -----------------------------------------------------
-    update_field_learning(document, final_data)
+    learn_fields(document, final_data)
 
     # -----------------------------------------------------
-    # 🧠 DATASET LOGGING (VERY IMPORTANT)
+    # 🧠 DATASET LOGGING (CRITICAL FOR FUTURE AI)
     # -----------------------------------------------------
     log_learning_event(document, final_data)
 
@@ -57,85 +72,88 @@ def record_learning(document):
 # =========================================================
 # 📊 CATEGORY LEARNING
 # =========================================================
-def update_category_learning(document):
+def learn_category(document):
     """
-    Tracks category usage frequency.
+    Tracks how frequently a category is used.
 
-    Helps:
-    - improve classification
-    - build ranking models later
+    Future impact:
+    ✔ Improves classification confidence
+    ✔ Enables ranking models
+    ✔ Helps identify dominant document types
     """
 
     try:
         category = DocumentCategory.objects.get(
             name=document.document_category
         )
+
         category.usage_count += 1
         category.save()
+
     except DocumentCategory.DoesNotExist:
+        # Category not yet registered (safe fail)
         pass
 
 
 # =========================================================
-# 🧩 FIELD LEARNING (DYNAMIC SYSTEM)
+# 🧩 FIELD LEARNING (IMPORTANT)
 # =========================================================
-def update_field_learning(document, data):
+def learn_fields(document, data):
     """
-    Learns which fields belong to which category.
+    Dynamically learns which fields belong to which category.
 
     Example:
     PAN → name, dob, pan_number
 
-    This enables:
-    - dynamic schema evolution
-    - validation building
-    - better extraction later
+    Future impact:
+    ✔ Auto-schema evolution
+    ✔ Better extraction
+    ✔ Field validation rules
+    ✔ AI fine-tuning signals
     """
 
-    category = get_category(document.document_category)
+    category = DocumentCategory.objects.filter(
+        name=document.document_category
+    ).first()
 
     if not category:
         return
 
-    for field_name in data.keys():
+    for field_name in (data or {}).keys():
 
         field, created = DocumentField.objects.get_or_create(
             name=field_name,
             category=category,
         )
 
-        # 🔮 Future:
-        # - add frequency count
-        # - add confidence tracking
-        # - build validation rules
+        # 🔮 FUTURE ENHANCEMENTS:
+        # - field frequency tracking
+        # - confidence scoring per field
+        # - validation rule generation
 
 
 # =========================================================
-# 🔧 HELPER
-# =========================================================
-def get_category(name):
-    return DocumentCategory.objects.filter(name=name).first()
-
-
-# =========================================================
-# 🧠 LEARNING DATASET LOGGER
+# 🧠 LEARNING DATA LOGGER
 # =========================================================
 def log_learning_event(document, data):
     """
     Logs structured learning data.
 
-    This becomes your future training dataset.
+    This becomes your:
+    ✔ Training dataset
+    ✔ Debugging tool
+    ✔ Analytics base
     """
 
     payload = {
         "document_id": str(document.id),
         "category": document.document_category,
         "final_data": data,
-        "confidence": document.confidence_score,
+        "confidence_score": document.confidence_score,
         "ai_used": document.ai_used,
         "review_status": document.review_status,
     }
 
-    print("\n===== VERIFIED LEARNING EVENT =====")
+    print("\n========== VERIFIED LEARNING EVENT ==========")
     print(payload)
-    print("==================================\n")
+    print("============================================\n")
