@@ -259,21 +259,76 @@ class DocumentField(models.Model):
 
 
 # =========================================================
-# ⚙️ USER SETTINGS (CONTROL AI + SECURITY)
+# ⚙️ USER SETTINGS (AI CONTROL + SECURITY POLICY)
 # =========================================================
 class UserSettings(models.Model):
     """
-    Stores per-user preferences.
+    Stores per-user system preferences.
 
-    Allows:
-    - Turning AI ON/OFF
-    - Enabling encryption
+    🧠 PURPOSE:
+    - Control AI usage (cost optimization)
+    - Enable/disable specific AI features
+    - Control encryption behavior
+
+    🎯 WHY THIS MATTERS:
+    - AI is expensive → must be configurable
+    - Different users = different needs
+    - Enables future SaaS pricing tiers
     """
+
+    # =========================================================
+    # 📊 CONFIDENCE THRESHOLD (USER OVERRIDE)
+    # =========================================================
+    confidence_threshold = models.FloatField(default=0.85)
+
+    """
+    Defines what user considers "high confidence".
+
+    Used to:
+    - Skip AI if confidence ≥ threshold
+    - Trigger AI if below threshold
+
+    Default = system standard (0.85)
+    """
+
+    # =========================================================
+    # 🧠 AI USAGE LEVEL (COST CONTROL)
+    # =========================================================
+    AI_LEVEL_CHOICES = [
+        (0, "No AI"),         # Fully rule-based system
+        (1, "Light AI"),      # Only fill missing fields
+        (2, "Full AI"),       # Full extraction + classification
+        (3, "Advanced AI"),   # Future: reasoning, relationships
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE)
 
-    use_ai = models.BooleanField(default=True)
+    # Overall AI level (primary control)
+    ai_level = models.IntegerField(choices=AI_LEVEL_CHOICES, default=2)
+
+    # =========================================================
+    # 🎛️ FEATURE-LEVEL AI CONTROLS
+    # =========================================================
+    use_ai_extraction = models.BooleanField(default=True)
+    use_ai_classification = models.BooleanField(default=True)
+    use_ai_relationship = models.BooleanField(default=False)
+
+    """
+    These allow fine-grained control:
+    - extraction → fill missing data
+    - classification → detect document type
+    - relationship → infer "wife", "father", etc.
+    """
+
+    # =========================================================
+    # 🔐 SECURITY CONTROL
+    # =========================================================
     enable_encryption = models.BooleanField(default=False)
+
+    """
+    If enabled:
+    - sensitive fields will be encrypted AFTER approval
+    """
 
     def __str__(self):
         return self.user.username

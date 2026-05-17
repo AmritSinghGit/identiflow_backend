@@ -3,18 +3,22 @@
 
 This module handles all API endpoints related to document lifecycle.
 
-🧠 CORE FLOW:
-Upload → OCR → Extraction → AI Assist → Merge → Confidence → Store → User Confirmation
+🧠 CORE FLOW (UPLOAD PIPELINE ONLY):
+Upload → OCR → Extraction → Classification → Confidence → Store
 
-🎯 DESIGN GOALS:
-- Fail-safe execution
-- Clear separation of concerns
-- Extendable for AI learning + human validation
+🚨 IMPORTANT:
+This layer DOES NOT:
+- Call AI
+- Make intelligence decisions
+- Perform learning
+
+Those belong to:
+→ intelligence layer (separate)
 """
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import Document, UserSettings
+from .models import Document
 from .serializers import DocumentSerializer
 
 import hashlib
@@ -24,29 +28,28 @@ from .services import (
     classify_document,
     extract_structured_data,
     detect_variant,
-    ai_extract_fields
 )
 
 
 # =========================================================
-# 📤 DOCUMENT UPLOAD + PROCESSING
+# 📤 DOCUMENT UPLOAD + PROCESSING (PURE INGESTION)
 # =========================================================
 class DocumentUploadView(generics.CreateAPIView):
     """
-    Handles document upload and full processing pipeline.
+    Handles document upload and base processing.
 
-    Steps:
-    1. Validate input
-    2. Prevent duplicates
-    3. Save document
-    4. Run OCR
-    5. Extract structured data
-    6. Classify document
-    7. Detect variant
-    8. AI fallback (if needed)
-    9. Merge data
-    10. Compute confidence
-    11. Store securely
+    🎯 RESPONSIBILITY:
+    - File validation
+    - Duplicate detection
+    - OCR extraction
+    - Rule-based parsing
+    - Classification
+    - Basic confidence scoring
+
+    ❌ DOES NOT:
+    - Use AI
+    - Perform learning
+    - Apply encryption
     """
 
     queryset = Document.objects.all()
@@ -56,7 +59,7 @@ class DocumentUploadView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         try:
             # =========================================================
-            # 📄 INPUT VALIDATION
+            # 📄 STEP 1 — INPUT VALIDATION
             # =========================================================
             file = request.FILES.get('file')
 
@@ -67,7 +70,7 @@ class DocumentUploadView(generics.CreateAPIView):
                 )
 
             # =========================================================
-            # 🔒 DUPLICATE DETECTION (HASH)
+            # 🔒 STEP 2 — DUPLICATE DETECTION (HASH)
             # =========================================================
             hasher = hashlib.sha256()
             for chunk in file.chunks():
@@ -89,7 +92,7 @@ class DocumentUploadView(generics.CreateAPIView):
                 )
 
             # =========================================================
-            # 💾 INITIAL SAVE
+            # 💾 STEP 3 — INITIAL SAVE
             # =========================================================
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -105,15 +108,7 @@ class DocumentUploadView(generics.CreateAPIView):
             file_path = document.file.path
 
             # =========================================================
-            # 🧠 USER SETTINGS (AI CONTROL)
-            # =========================================================
-            user_settings = UserSettings.objects.filter(user=request.user).first()
-            use_ai = user_settings.use_ai if user_settings else True
-
-            document.ai_used = use_ai
-
-            # =========================================================
-            # 🧠 STEP 1 — OCR
+            # 🧠 STEP 4 — OCR EXTRACTION
             # =========================================================
             text = extract_text(file_path)
             print("OCR TEXT:", text)
@@ -121,17 +116,17 @@ class DocumentUploadView(generics.CreateAPIView):
             document.extracted_text = text
 
             # =========================================================
-            # 🧠 STEP 2 — RULE-BASED EXTRACTION
+            # 🧠 STEP 5 — RULE-BASED DATA EXTRACTION
             # =========================================================
             structured_data = extract_structured_data(text)
 
             # =========================================================
-            # 🧠 STEP 3 — CATEGORY CLASSIFICATION
+            # 🧠 STEP 6 — DOCUMENT CLASSIFICATION
             # =========================================================
             category, _ = classify_document(text)
 
             # =========================================================
-            # 🧠 STEP 4 — VARIANT DETECTION
+            # 🧠 STEP 7 — VARIANT DETECTION
             # =========================================================
             variant, _ = detect_variant(text, category)
 
@@ -139,92 +134,55 @@ class DocumentUploadView(generics.CreateAPIView):
                 document.variant_name = variant.name
 
             # =========================================================
-            # 🤖 STEP 5 — AI FALLBACK (CONTROLLED)
-            # =========================================================
-            ai_data = {}
-
-            try:
-                if use_ai and (category == "Unknown" or len(structured_data) < 2):
-                    print("Using AI fallback")
-
-                    ai_data = ai_extract_fields(text)
-
-                    if isinstance(ai_data, dict):
-                        document.raw_ai_response = ai_data
-            except Exception as e:
-                print("AI ERROR:", str(e))
-
-            # =========================================================
-            # 🔀 STEP 6 — MERGE RULE + AI DATA
+            # 🔀 STEP 8 — FINAL STRUCTURED DATA (NO AI)
             # =========================================================
             final_data = structured_data.copy()
 
-            if isinstance(ai_data, dict):
-                for key, value in ai_data.items():
-                    if key not in final_data or not final_data.get(key):
-                        final_data[key] = value
-
             # =========================================================
-            # 👤 STEP 7 — OWNER NAME EXTRACTION
+            # 👤 STEP 9 — OWNER NAME EXTRACTION
             # =========================================================
             document.owner_name = final_data.get("name", "")
 
             # =========================================================
-            # 🧠 STEP 8 — FINAL CATEGORY DECISION
+            # 🧠 STEP 10 — CATEGORY ASSIGNMENT
             # =========================================================
-            if category == "Unknown" and isinstance(ai_data, dict):
-                document.suggested_category = ai_data.get("document_type", "")
-            else:
-                document.document_category = category
+            document.document_category = category
 
             # =========================================================
-            # 👥 STEP 9 — RELATIONSHIP DEFAULT
+            # 👥 STEP 11 — RELATIONSHIP DEFAULT
             # =========================================================
             document.relationship = final_data.get("relationship", "self")
 
             # =========================================================
-            # 📊 STEP 10 — CONFIDENCE SCORING
+            # 📊 STEP 12 — BASIC CONFIDENCE SCORING
             # =========================================================
             confidence = 0
 
             if category != "Unknown":
-                confidence += 0.4
+                confidence += 0.5
+
             if final_data.get("pan_number"):
                 confidence += 0.2
+
             if final_data.get("name"):
                 confidence += 0.2
+
             if final_data.get("dob"):
-                confidence += 0.1
-            if variant:
                 confidence += 0.1
 
             document.confidence_score = round(confidence, 2)
 
             # =========================================================
-            # 🧠 STEP 11 — AI CONFIDENCE (SEPARATE TRACKING)
-            # =========================================================
-            ai_conf = 0
-
-            if ai_data.get("pan_number"):
-                ai_conf += 0.4
-            if ai_data.get("name"):
-                ai_conf += 0.3
-            if ai_data.get("dob"):
-                ai_conf += 0.3
-
-            document.ai_confidence_score = ai_conf
-
-            # =========================================================
-            # 💾 STEP 12 — STORE SYSTEM OUTPUT (NO ENCRYPTION YET)
+            # 💾 STEP 13 — STORE OUTPUT
             # =========================================================
             document.extracted_data = final_data
 
             # =========================================================
-            # ⏳ STEP 13 — WAITING FOR USER CONFIRMATION
+            # ⏳ STEP 14 — INITIAL STATUS
             # =========================================================
             document.user_confirmation_status = 'pending'
-
             document.processing_status = 'completed'
+
             document.save()
 
             return Response(
