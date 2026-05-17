@@ -1,42 +1,141 @@
 """
 📦 documents/learning.py
 
-Handles learning signals from user/admin actions.
+🧠 LEARNING ENGINE (FOUNDATION)
 
-🧠 PURPOSE:
-- Capture corrections
-- Capture confirmations
-- Build dataset for future AI training
+This module captures VERIFIED data and converts it into
+structured intelligence for future AI improvement.
+
+🚨 GOLDEN RULE:
+We ONLY learn from VERIFIED documents.
+
+This ensures:
+✔ No garbage learning
+✔ High-quality dataset
+✔ Future ML readiness
 """
 
+from .models import Document, DocumentCategory, DocumentField
 
+
+# =========================================================
+# 🧠 MAIN ENTRY POINT
+# =========================================================
 def record_learning(document):
     """
-    Generates learning signals from document lifecycle.
+    Called AFTER:
+    - reviewer approval
+    - OR trusted user confirmation
 
-    Returns:
-        dict OR None
+    This function builds long-term intelligence.
     """
 
-    # =========================================================
-    # 🧠 USER CORRECTED DATA (STRONG SIGNAL)
-    # =========================================================
-    if document.user_confirmation_status == 'corrected':
-        return {
-            "type": "correction",
-            "original": document.extracted_data,
-            "corrected": document.user_corrected_data,
-            "category": document.document_category
-        }
+    # -----------------------------------------------------
+    # 🚫 SAFETY CHECK
+    # -----------------------------------------------------
+    if not document.is_verified:
+        return  # NEVER learn from unverified data
 
-    # =========================================================
-    # 🧠 USER CONFIRMED DATA (WEAK SIGNAL)
-    # =========================================================
-    if document.user_confirmation_status == 'confirmed':
-        return {
-            "type": "confirmation",
-            "data": document.extracted_data,
-            "category": document.document_category
-        }
+    final_data = document.reviewed_data or {}
 
-    return None
+    # -----------------------------------------------------
+    # 📊 CATEGORY LEARNING
+    # -----------------------------------------------------
+    update_category_learning(document)
+
+    # -----------------------------------------------------
+    # 🧩 FIELD LEARNING
+    # -----------------------------------------------------
+    update_field_learning(document, final_data)
+
+    # -----------------------------------------------------
+    # 🧠 DATASET LOGGING (VERY IMPORTANT)
+    # -----------------------------------------------------
+    log_learning_event(document, final_data)
+
+
+# =========================================================
+# 📊 CATEGORY LEARNING
+# =========================================================
+def update_category_learning(document):
+    """
+    Tracks category usage frequency.
+
+    Helps:
+    - improve classification
+    - build ranking models later
+    """
+
+    try:
+        category = DocumentCategory.objects.get(
+            name=document.document_category
+        )
+        category.usage_count += 1
+        category.save()
+    except DocumentCategory.DoesNotExist:
+        pass
+
+
+# =========================================================
+# 🧩 FIELD LEARNING (DYNAMIC SYSTEM)
+# =========================================================
+def update_field_learning(document, data):
+    """
+    Learns which fields belong to which category.
+
+    Example:
+    PAN → name, dob, pan_number
+
+    This enables:
+    - dynamic schema evolution
+    - validation building
+    - better extraction later
+    """
+
+    category = get_category(document.document_category)
+
+    if not category:
+        return
+
+    for field_name in data.keys():
+
+        field, created = DocumentField.objects.get_or_create(
+            name=field_name,
+            category=category,
+        )
+
+        # 🔮 Future:
+        # - add frequency count
+        # - add confidence tracking
+        # - build validation rules
+
+
+# =========================================================
+# 🔧 HELPER
+# =========================================================
+def get_category(name):
+    return DocumentCategory.objects.filter(name=name).first()
+
+
+# =========================================================
+# 🧠 LEARNING DATASET LOGGER
+# =========================================================
+def log_learning_event(document, data):
+    """
+    Logs structured learning data.
+
+    This becomes your future training dataset.
+    """
+
+    payload = {
+        "document_id": str(document.id),
+        "category": document.document_category,
+        "final_data": data,
+        "confidence": document.confidence_score,
+        "ai_used": document.ai_used,
+        "review_status": document.review_status,
+    }
+
+    print("\n===== VERIFIED LEARNING EVENT =====")
+    print(payload)
+    print("==================================\n")
