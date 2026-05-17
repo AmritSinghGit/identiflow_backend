@@ -306,41 +306,42 @@ class UserSettings(models.Model):
     # =========================================================
     # 🧠 DOCUMENT REVIEW (MULTI-REVIEW SYSTEM)
     # =========================================================
-    class DocumentReview(models.Model):
-        """
-        Stores reviewer decisions for documents.
+class DocumentReview(models.Model):
+    """
+    Stores reviewer decisions for documents.
 
-        Enables:
-        - Multi-review workflows
-        - Audit logs
-        - Conflict resolution
-        """
+    Enables:
+    - Multi-review workflows
+    - Audit logs
+    - Conflict resolution
+    """
 
-        document = models.ForeignKey(
-            Document,
-            on_delete=models.CASCADE,
-            related_name="reviews"
-        )
+    document = models.ForeignKey(
+        Document,
+        on_delete=models.CASCADE,
+        related_name="reviews"
+    )
 
-        reviewer = models.ForeignKey(
-            User,
-            on_delete=models.CASCADE
-        )
+    reviewer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="reviews_given"
+    )
 
-        decision = models.CharField(
-            max_length=20,
-            choices=[
-                ('approved', 'Approved'),
-                ('rejected', 'Rejected')
-            ]
-        )
+    decision = models.CharField(
+        max_length=20,
+        choices=[
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected')
+        ]
+    )
 
-        comments = models.TextField(blank=True)
+    comments = models.TextField(blank=True)
 
-        created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
-        def __str__(self):
-            return f"{self.document.id} - {self.decision} by {self.reviewer.username}"
+    def __str__(self):
+        return f"{self.document.id} - {self.decision} by {self.reviewer.username}"
 
     # =========================================================
     # 🧠 AI USAGE LEVEL (COST CONTROL)
