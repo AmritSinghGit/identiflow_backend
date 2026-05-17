@@ -150,14 +150,26 @@ class DocumentUploadView(generics.CreateAPIView):
             # ===============================
             # SAVE
             # ===============================
-            document.extracted_data = final_data
+            from .security import encrypt_value
+
+            SENSITIVE_FIELDS = ["pan_number", "name", "dob"]
+
+            secure_data = {}
+
+            for key, value in final_data.items():
+                if key in SENSITIVE_FIELDS:
+                    secure_data[key] = encrypt_value(value)
+                else:
+                    secure_data[key] = value
+
+            document.extracted_data = secure_data
             document.processing_status = 'completed'
             document.save()
 
             return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            print("🚨 FULL ERROR:", str(e))
+            print(" FULL ERROR:", str(e))
             return Response(
                 {"error": "Something went wrong", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
