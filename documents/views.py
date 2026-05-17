@@ -1,24 +1,67 @@
+"""
+📦 documents/views.py
+
+This module handles all API endpoints related to document lifecycle.
+
+🧠 CORE FLOW (UPLOAD PIPELINE ONLY):
+Upload → OCR → Extraction → Classification → Confidence → Store
+
+🚨 IMPORTANT:
+This layer DOES NOT:
+- Call AI
+- Make intelligence decisions
+- Perform learning
+
+Those belong to:
+→ intelligence layer (separate)
+"""
+
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import Document
+from .models import Document, DocumentReview
 from .serializers import DocumentSerializer
+from .intelligence.engine import process_document_intelligence
+
 import hashlib
 
 from .services import (
     extract_text,
     classify_document,
     extract_structured_data,
-    detect_variant
+    detect_variant,
 )
 
 
+# =========================================================
+# 📤 DOCUMENT UPLOAD + PROCESSING (PURE INGESTION)
+# =========================================================
 class DocumentUploadView(generics.CreateAPIView):
+    """
+    Handles document upload and base processing.
+
+    🎯 RESPONSIBILITY:
+    - File validation
+    - Duplicate detection
+    - OCR extraction
+    - Rule-based parsing
+    - Classification
+    - Basic confidence scoring
+
+    ❌ DOES NOT:
+    - Use AI
+    - Perform learning
+    - Apply encryption
+    """
+
     queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
         try:
+            # =========================================================
+            # 📄 STEP 1 — INPUT VALIDATION
+            # =========================================================
             file = request.FILES.get('file')
 
             if not file:
@@ -27,13 +70,14 @@ class DocumentUploadView(generics.CreateAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # 🔒 Hash
+            # =========================================================
+            # 🔒 STEP 2 — DUPLICATE DETECTION (HASH)
+            # =========================================================
             hasher = hashlib.sha256()
             for chunk in file.chunks():
                 hasher.update(chunk)
             file_hash = hasher.hexdigest()
 
-            # 🚫 Duplicate
             existing_document = Document.objects.filter(
                 owner=request.user,
                 file_hash=file_hash
@@ -48,130 +92,145 @@ class DocumentUploadView(generics.CreateAPIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # 💾 Save
+            # =========================================================
+            # 💾 STEP 3 — INITIAL SAVE
+            # =========================================================
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            document = serializer.save(owner=request.user, file_hash=file_hash)
+
+            document = serializer.save(
+                owner=request.user,
+                file_hash=file_hash
+            )
 
             document.processing_status = 'processing'
             document.save()
 
             file_path = document.file.path
 
-            # ===============================
-            # OCR
-            # ===============================
+            # =========================================================
+            # 🧠 STEP 4 — OCR EXTRACTION
+            # =========================================================
             text = extract_text(file_path)
             print("OCR TEXT:", text)
 
             document.extracted_text = text
 
-            # ===============================
-            # RULE EXTRACTION
-            # ===============================
+            # =========================================================
+            # 🧠 STEP 5 — RULE-BASED DATA EXTRACTION
+            # =========================================================
             structured_data = extract_structured_data(text)
 
-            # ===============================
-            # CATEGORY
-            # ===============================
+            # =========================================================
+            # 🧠 STEP 6 — DOCUMENT CLASSIFICATION
+            # =========================================================
             category, _ = classify_document(text)
 
-            # ===============================
-            # VARIANT
-            # ===============================
+            # =========================================================
+            # 🧠 STEP 7 — VARIANT DETECTION
+            # =========================================================
             variant, _ = detect_variant(text, category)
 
             if variant:
                 document.variant_name = variant.name
 
-            # ===============================
-            # AI FALLBACK (SAFE)
-            # ===============================
-            from .services import ai_extract_fields
-
-            ai_data = {}
-
-            try:
-                if category == "Unknown" or len(structured_data) < 2:
-                    print("⚠️ Using AI fallback")
-                    ai_data = ai_extract_fields(text)
-
-                    if isinstance(ai_data, dict):
-                        document.raw_ai_response = ai_data
-            except Exception as e:
-                print("AI ERROR:", str(e))
-
-            # ===============================
-            # MERGE
-            # ===============================
+            # =========================================================
+            # 🔀 STEP 8 — FINAL STRUCTURED DATA (NO AI)
+            # =========================================================
             final_data = structured_data.copy()
 
-            if isinstance(ai_data, dict):
-                for key, value in ai_data.items():
-                    if key not in final_data or not final_data.get(key):
-                        final_data[key] = value
-
-            # ===============================
-            # OWNER NAME
-            # ===============================
+            # =========================================================
+            # 👤 STEP 9 — OWNER NAME EXTRACTION
+            # =========================================================
             document.owner_name = final_data.get("name", "")
 
-            # ===============================
-            # CATEGORY FINAL
-            # ===============================
-            if category == "Unknown" and isinstance(ai_data, dict):
-                document.suggested_category = ai_data.get("document_type", "")
-            else:
-                document.document_category = category
+            # =========================================================
+            # 🧠 STEP 10 — CATEGORY ASSIGNMENT
+            # =========================================================
+            document.document_category = category
 
-            # ===============================
-            # DEFAULT RELATION
-            # ===============================
-            document.belongs_to = document.owner.username
+            # =========================================================
+            # 👥 STEP 11 — RELATIONSHIP DEFAULT
+            # =========================================================
+            document.relationship = final_data.get("relationship", "self")
 
-            # ===============================
-            # CONFIDENCE
-            # ===============================
+            # =========================================================
+            # 📊 STEP 12 — BASIC CONFIDENCE SCORING
+            # =========================================================
             confidence = 0
 
             if category != "Unknown":
-                confidence += 0.4
+                confidence += 0.5
+
             if final_data.get("pan_number"):
                 confidence += 0.2
+
             if final_data.get("name"):
                 confidence += 0.2
+
             if final_data.get("dob"):
-                confidence += 0.1
-            if variant:
                 confidence += 0.1
 
             document.confidence_score = round(confidence, 2)
 
-            # ===============================
-            # SAVE
-            # ===============================
+            # =========================================================
+            # 💾 STEP 13 — STORE OUTPUT
+            # =========================================================
             document.extracted_data = final_data
+
+            # =========================================================
+            # ⏳ STEP 14 — INITIAL STATUS
+            # =========================================================
+            document.user_confirmation_status = 'pending'
             document.processing_status = 'completed'
+
             document.save()
 
-            return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
+            # =========================================================
+            # 🔥 STEP 15 — INTELLIGENCE LAYER (POST PROCESSING)
+            # =========================================================
+            process_document_intelligence(document)
+
+            # =========================================================
+            # 📤 FINAL RESPONSE
+            # =========================================================
+            return Response(
+                DocumentSerializer(document).data,
+                status=status.HTTP_201_CREATED
+            )
+
 
         except Exception as e:
-            print("🚨 FULL ERROR:", str(e))
+            print("FULL ERROR:", str(e))
             return Response(
                 {"error": "Something went wrong", "details": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
+# =========================================================
+# 📄 USER DOCUMENT LIST
+# =========================================================
 class UserDocumentListView(generics.ListAPIView):
+    """
+    Returns all documents belonging to logged-in user.
+    """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Document.objects.filter(owner=self.request.user).order_by('-created_at')
+        return Document.objects.filter(
+            owner=self.request.user
+        ).order_by('-created_at')
 
 
+# =========================================================
+# 🔍 DOCUMENT DETAIL
+# =========================================================
 class DocumentDetailView(generics.RetrieveAPIView):
+    """
+    Fetch single document details.
+    """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
@@ -180,7 +239,13 @@ class DocumentDetailView(generics.RetrieveAPIView):
         return Document.objects.filter(owner=self.request.user)
 
 
+# =========================================================
+# 🗑️ DELETE DOCUMENT
+# =========================================================
 class DocumentDeleteView(generics.DestroyAPIView):
+    """
+    Delete document owned by user.
+    """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
@@ -189,10 +254,227 @@ class DocumentDeleteView(generics.DestroyAPIView):
         return Document.objects.filter(owner=self.request.user)
 
 
+# =========================================================
+# ✏️ UPDATE DOCUMENT
+# =========================================================
 class DocumentUpdateView(generics.UpdateAPIView):
+    """
+    Update document metadata (not system-generated fields).
+    """
     serializer_class = DocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = 'id'
 
     def get_queryset(self):
         return Document.objects.filter(owner=self.request.user)
+
+
+# =========================================================
+# 🧠 USER CONFIRMATION API (CRITICAL)
+# =========================================================
+class DocumentConfirmView(generics.UpdateAPIView):
+    """
+    Handles user confirmation / correction of extracted data.
+
+    🧠 PURPOSE:
+    - Capture ground truth
+    - Improve future AI accuracy
+    - Build proprietary dataset
+
+    INPUT:
+    {
+        "action": "confirm" OR "correct",
+        "data": { ... corrected fields ... }
+    }
+    """
+
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        return Document.objects.filter(owner=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        document = self.get_object()
+
+        action = request.data.get("action")
+        corrected_data = request.data.get("data", {})
+
+        # =========================================================
+        # ✅ CASE 1 — USER CONFIRMS
+        # =========================================================
+        if action == "confirm":
+            document.user_confirmation_status = "confirmed"
+            document.reviewed_data = document.extracted_data
+
+        # =========================================================
+        # ✏️ CASE 2 — USER CORRECTS
+        # =========================================================
+        elif action == "correct":
+            document.user_confirmation_status = "corrected"
+            document.user_corrected_data = corrected_data
+            document.reviewed_data = corrected_data
+
+        else:
+            return Response(
+                {"error": "Invalid action"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # =========================================================
+        # 🧠 FINAL DATA (TRUSTED)
+        # =========================================================
+        document.is_verified = True
+        document.save()
+
+        # =========================================================
+        # 🧠 LEARNING HOOK (NEXT STEP)
+        # =========================================================
+        from .learning import record_learning
+        record_learning(document)
+
+        return Response(
+            DocumentSerializer(document).data,
+            status=status.HTTP_200_OK
+        )
+
+
+# =========================================================
+# 🧠 REVIEWER ACTION API (APPROVE / REJECT)
+# =========================================================
+class DocumentReviewActionView(generics.CreateAPIView):
+    """
+    Allows a reviewer to approve or reject a document.
+
+    🧠 PURPOSE:
+    - Capture human validation
+    - Enable multi-review system
+    - Drive final trust decision
+
+    INPUT:
+    {
+        "decision": "approved" OR "rejected",
+        "comments": "optional"
+    }
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id):
+        from .models import Document, DocumentReview
+
+        document = Document.objects.filter(id=id).first()
+
+        if not document:
+            return Response({"error": "Document not found"}, status=404)
+
+        decision = request.data.get("decision")
+        comments = request.data.get("comments", "")
+
+        if decision not in ["approved", "rejected"]:
+            return Response({"error": "Invalid decision"}, status=400)
+
+        # =========================================================
+        # 🧠 CREATE REVIEW ENTRY
+        # =========================================================
+        review = DocumentReview.objects.create(
+            document=document,
+            reviewer=request.user,
+            decision=decision,
+            comments=comments
+        )
+
+
+    # =========================================================
+    # 🧠 REVIEW OUTCOME ENGINE
+    # =========================================================
+    def apply_review_outcome(document):
+        """
+        Determines final outcome after reviewer actions.
+
+        Handles:
+        - multi-review approval
+        - rejection logic
+        - final trust assignment
+        """
+
+        from .models import DocumentReview
+
+        reviews = DocumentReview.objects.filter(document=document)
+
+        approvals = reviews.filter(decision="approved").count()
+        rejections = reviews.filter(decision="rejected").count()
+
+        required = document.required_reviewers
+
+        # -----------------------------------------------------
+        # ❌ ANY REJECTION → REJECT
+        # -----------------------------------------------------
+        if rejections > 0:
+            document.review_status = "review_rejected"
+            document.is_verified = False
+            document.save()
+            return
+
+        # -----------------------------------------------------
+        # ✅ REQUIRED APPROVALS MET → APPROVE
+        # -----------------------------------------------------
+        if approvals >= required:
+            document.review_status = "review_approved"
+            document.is_verified = True
+            document.reviewed_data = document.extracted_data
+            document.save()
+            return
+
+        # -----------------------------------------------------
+        # ⏳ STILL WAITING
+        # -----------------------------------------------------
+        document.review_status = "under_review"
+        document.save()
+
+
+# =========================================================
+# 🧠 REVIEW OUTCOME ENGINE
+# =========================================================
+def apply_review_outcome(document):
+    """
+    Determines final outcome after reviewer actions.
+
+    Handles:
+    - multi-review approval
+    - rejection logic
+    - final trust assignment
+    """
+
+    reviews = DocumentReview.objects.filter(document=document)
+
+    approvals = reviews.filter(decision="approved").count()
+    rejections = reviews.filter(decision="rejected").count()
+
+    required = document.required_reviewers
+
+    # -----------------------------------------------------
+    # ❌ ANY REJECTION → REJECT
+    # -----------------------------------------------------
+    if rejections > 0:
+        document.review_status = "review_rejected"
+        document.is_verified = False
+        document.save()
+        return
+
+    # -----------------------------------------------------
+    # ✅ REQUIRED APPROVALS MET → APPROVE
+    # -----------------------------------------------------
+    if approvals >= required:
+        document.review_status = "review_approved"
+        document.is_verified = True
+        document.reviewed_data = document.extracted_data
+        document.save()
+        return
+
+    # -----------------------------------------------------
+    # ⏳ STILL WAITING
+    # -----------------------------------------------------
+    document.review_status = "under_review"
+    document.save()
