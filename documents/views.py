@@ -119,7 +119,28 @@ class DocumentUploadView(generics.CreateAPIView):
             # =========================================================
             # 🧠 STEP 5 — RULE-BASED DATA EXTRACTION
             # =========================================================
-            structured_data = extract_structured_data(text)
+            structured_data = extract_structured_data(text) or {}
+
+            document.extracted_data = structured_data
+            document.save()
+
+            # =========================================================
+            # 🧠 VALIDATION ENGINE
+            # =========================================================
+            from .validation import validate_document_data
+            validate_document_data(document)
+
+            # =========================================================
+            # 🧠 FIELD CONFIDENCE ENGINE
+            # =========================================================
+            from .field_confidence import build_field_confidence
+            build_field_confidence(document)
+
+            # =========================================================
+            # 🧠 AI TARGETING ENGINE
+            # =========================================================
+            from .ai_targeting import run_ai_targeting
+            run_ai_targeting(document)
 
             # =========================================================
             # 🧠 STEP 6 — DOCUMENT CLASSIFICATION
@@ -137,12 +158,14 @@ class DocumentUploadView(generics.CreateAPIView):
             # =========================================================
             # 🔀 STEP 8 — FINAL STRUCTURED DATA (NO AI)
             # =========================================================
-            final_data = structured_data.copy()
+            # final_data = structured_data.copy()
 
             # =========================================================
             # 👤 STEP 9 — OWNER NAME EXTRACTION
             # =========================================================
-            document.owner_name = final_data.get("name", "")
+            document.owner_name = (
+                document.extracted_data.get("name", {}).get("value", "")
+            )
 
             # =========================================================
             # 🧠 STEP 10 — CATEGORY ASSIGNMENT
@@ -152,34 +175,18 @@ class DocumentUploadView(generics.CreateAPIView):
             # =========================================================
             # 👥 STEP 11 — RELATIONSHIP DEFAULT
             # =========================================================
-            document.relationship = final_data.get("relationship", "self")
+            document.relationship = (
+                document.extracted_data.get("relationship", {}).get("value", "self")
+            )
+
 
             # =========================================================
-            # 📊 STEP 12 — BASIC CONFIDENCE SCORING
+            # 💾 STEP 12 — STORE OUTPUT
             # =========================================================
-            confidence = 0
-
-            if category != "Unknown":
-                confidence += 0.5
-
-            if final_data.get("pan_number"):
-                confidence += 0.2
-
-            if final_data.get("name"):
-                confidence += 0.2
-
-            if final_data.get("dob"):
-                confidence += 0.1
-
-            document.confidence_score = round(confidence, 2)
+            # document.extracted_data = final_data
 
             # =========================================================
-            # 💾 STEP 13 — STORE OUTPUT
-            # =========================================================
-            document.extracted_data = final_data
-
-            # =========================================================
-            # ⏳ STEP 14 — INITIAL STATUS
+            # ⏳ STEP 13 — INITIAL STATUS
             # =========================================================
             document.user_confirmation_status = 'pending'
             document.processing_status = 'completed'
@@ -187,7 +194,7 @@ class DocumentUploadView(generics.CreateAPIView):
             document.save()
 
             # =========================================================
-            # 🔥 STEP 15 — INTELLIGENCE LAYER (POST PROCESSING)
+            # 🔥 STEP 14 — INTELLIGENCE LAYER (POST PROCESSING)
             # =========================================================
             process_document_intelligence(document)
 
