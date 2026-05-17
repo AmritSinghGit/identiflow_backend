@@ -18,7 +18,7 @@ Those belong to:
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from .models import Document
+from .models import Document, DocumentReview
 from .serializers import DocumentSerializer
 from .intelligence.engine import process_document_intelligence
 
@@ -338,3 +338,143 @@ class DocumentConfirmView(generics.UpdateAPIView):
             DocumentSerializer(document).data,
             status=status.HTTP_200_OK
         )
+
+
+# =========================================================
+# 🧠 REVIEWER ACTION API (APPROVE / REJECT)
+# =========================================================
+class DocumentReviewActionView(generics.CreateAPIView):
+    """
+    Allows a reviewer to approve or reject a document.
+
+    🧠 PURPOSE:
+    - Capture human validation
+    - Enable multi-review system
+    - Drive final trust decision
+
+    INPUT:
+    {
+        "decision": "approved" OR "rejected",
+        "comments": "optional"
+    }
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, id):
+        from .models import Document, DocumentReview
+
+        document = Document.objects.filter(id=id).first()
+
+        if not document:
+            return Response({"error": "Document not found"}, status=404)
+
+        decision = request.data.get("decision")
+        comments = request.data.get("comments", "")
+
+        if decision not in ["approved", "rejected"]:
+            return Response({"error": "Invalid decision"}, status=400)
+
+        # =========================================================
+        # 🧠 CREATE REVIEW ENTRY
+        # =========================================================
+        review = DocumentReview.objects.create(
+            document=document,
+            reviewer=request.user,
+            decision=decision,
+            comments=comments
+        )
+
+
+    # =========================================================
+    # 🧠 REVIEW OUTCOME ENGINE
+    # =========================================================
+    def apply_review_outcome(document):
+        """
+        Determines final outcome after reviewer actions.
+
+        Handles:
+        - multi-review approval
+        - rejection logic
+        - final trust assignment
+        """
+
+        from .models import DocumentReview
+
+        reviews = DocumentReview.objects.filter(document=document)
+
+        approvals = reviews.filter(decision="approved").count()
+        rejections = reviews.filter(decision="rejected").count()
+
+        required = document.required_reviewers
+
+        # -----------------------------------------------------
+        # ❌ ANY REJECTION → REJECT
+        # -----------------------------------------------------
+        if rejections > 0:
+            document.review_status = "review_rejected"
+            document.is_verified = False
+            document.save()
+            return
+
+        # -----------------------------------------------------
+        # ✅ REQUIRED APPROVALS MET → APPROVE
+        # -----------------------------------------------------
+        if approvals >= required:
+            document.review_status = "review_approved"
+            document.is_verified = True
+            document.reviewed_data = document.extracted_data
+            document.save()
+            return
+
+        # -----------------------------------------------------
+        # ⏳ STILL WAITING
+        # -----------------------------------------------------
+        document.review_status = "under_review"
+        document.save()
+
+
+# =========================================================
+# 🧠 REVIEW OUTCOME ENGINE
+# =========================================================
+def apply_review_outcome(document):
+    """
+    Determines final outcome after reviewer actions.
+
+    Handles:
+    - multi-review approval
+    - rejection logic
+    - final trust assignment
+    """
+
+    reviews = DocumentReview.objects.filter(document=document)
+
+    approvals = reviews.filter(decision="approved").count()
+    rejections = reviews.filter(decision="rejected").count()
+
+    required = document.required_reviewers
+
+    # -----------------------------------------------------
+    # ❌ ANY REJECTION → REJECT
+    # -----------------------------------------------------
+    if rejections > 0:
+        document.review_status = "review_rejected"
+        document.is_verified = False
+        document.save()
+        return
+
+    # -----------------------------------------------------
+    # ✅ REQUIRED APPROVALS MET → APPROVE
+    # -----------------------------------------------------
+    if approvals >= required:
+        document.review_status = "review_approved"
+        document.is_verified = True
+        document.reviewed_data = document.extracted_data
+        document.save()
+        return
+
+    # -----------------------------------------------------
+    # ⏳ STILL WAITING
+    # -----------------------------------------------------
+    document.review_status = "under_review"
+    document.save()
