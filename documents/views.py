@@ -43,7 +43,6 @@ from .services import (
 
 from .validation import validate_document_data
 from .field_confidence import build_field_confidence
-from .ai_targeting import run_ai_targeting
 
 
 # =========================================================
@@ -131,12 +130,19 @@ class DocumentUploadView(generics.CreateAPIView):
             # =====================================================
             # 🧠 STEP 7 — FIELD CONFIDENCE ENGINE
             # =====================================================
+            print("\nCALLING FIELD CONFIDENCE ENGINE")
+
+            from .field_confidence import build_field_confidence
+
             build_field_confidence(document)
+
+            print("\nFIELD CONFIDENCE ENGINE FINISHED")
+            print(document.extracted_data)
 
             # =====================================================
             # 🧠 STEP 8 — AI TARGETING ENGINE
             # =====================================================
-            run_ai_targeting(document)
+            # run_ai_targeting(document)
 
             # =====================================================
             # 🧠 STEP 9 — DOCUMENT CLASSIFICATION
@@ -153,23 +159,29 @@ class DocumentUploadView(generics.CreateAPIView):
             if variant:
                 document.variant_name = variant.name
 
+            print("\nDEBUG EXTRACTED DATA")
+            print(document.extracted_data)
+            print(type(document.extracted_data))
+
             # =====================================================
             # 👤 STEP 11 — OWNER NAME
             # =====================================================
-            document.owner_name = (
-                document.extracted_data
-                .get("name", {})
-                .get("value", "")
-            )
+            name_data = document.extracted_data.get("name", {})
+
+            if isinstance(name_data, dict):
+                document.owner_name = name_data.get("value", "")
+            else:
+                document.owner_name = str(name_data)
 
             # =====================================================
             # 👥 STEP 12 — RELATIONSHIP
             # =====================================================
-            document.relationship = (
-                document.extracted_data
-                .get("relationship", {})
-                .get("value", "self")
-            )
+            relationship_data = document.extracted_data.get("relationship", {})
+
+            if isinstance(relationship_data, dict):
+                document.relationship = relationship_data.get("value", "self")
+            else:
+                document.relationship = str(relationship_data or "self")
 
             # =====================================================
             # 🧠 STEP 13 — TRUST DECISION
