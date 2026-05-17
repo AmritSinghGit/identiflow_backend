@@ -1,29 +1,29 @@
 """
 📦 documents/services.py
 
-This module contains all intelligence logic of the system.
+🧠 CORE INTELLIGENCE LAYER
 
-🧠 RESPONSIBILITIES:
-- OCR extraction
-- Rule-based extraction
-- AI-assisted extraction
-- Document classification
-- Variant detection
-- Heuristic suggestions
+Handles:
+✔ OCR extraction
+✔ Rule-based extraction
+✔ AI extraction (multi-provider ready)
+✔ Classification
+✔ Variant detection
 
-🎯 DESIGN GOALS:
-- Modular intelligence layers
-- Safe AI integration
-- Extensible for learning systems
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚨 RULES:
+✔ NEVER trust external data (OCR / AI)
+✔ ALWAYS return safe defaults
+✔ AI must NEVER break pipeline
 """
 
 import re
 import os
 import json
+from .logger import log_event
 
 import pytesseract
 from PIL import Image
-
 from openai import OpenAI
 
 from .models import DocumentVariant, DocumentCategory
@@ -32,7 +32,6 @@ from .models import DocumentVariant, DocumentCategory
 # =========================================================
 # ⚙️ CONFIGURATION
 # =========================================================
-# Path to Tesseract OCR engine (Windows specific)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
@@ -40,30 +39,46 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 # 🤖 OPENAI CLIENT
 # =========================================================
 def get_openai_client():
-    """
-    Initializes OpenAI client using environment variable.
-
-    Returns:
-        OpenAI client or None if API key not set
-    """
     api_key = os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        print("OpenAI key missing, skipping AI extraction")
+        log_event("AI_SKIPPED_NO_KEY")
         return None
 
     return OpenAI(api_key=api_key)
 
 
 # =========================================================
-# 🤖 AI EXTRACTION
+# 🤖 AI EXTRACTION (MULTI-PROVIDER READY)
 # =========================================================
-def ai_extract_fields(text):
+def ai_extract_fields(text, provider="openai"):
     """
-    Uses AI to extract structured data from OCR text.
+    Extract structured data using AI.
 
-    Returns:
-        dict → parsed structured data
+    ALWAYS returns dict (safe)
+    """
+
+    if not text:
+        return {}
+
+    try:
+        if provider == "openai":
+            return _openai_extract(text)
+
+        # Future:
+        # if provider == "claude":
+        #     return _claude_extract(text)
+
+        return {}
+
+    except Exception as e:
+        log_event("AI_ERROR", {"error": str(e)}, level="error")
+        return {}
+
+
+def _openai_extract(text):
+    """
+    OpenAI extraction logic
     """
 
     client = get_openai_client()
@@ -71,36 +86,43 @@ def ai_extract_fields(text):
     if not client:
         return {}
 
+    prompt = f"""
+    Extract structured data from this document.
+
+    Return ONLY valid JSON:
+    {{
+        "name": "",
+        "dob": "",
+        "pan_number": "",
+        "document_type": "",
+        "relationship": ""
+    }}
+
+    Text:
+    {text}
+    """
+
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
+    )
+
+    content = response.choices[0].message.content
+
+    # =========================================================
+    # 🛡️ SAFE JSON PARSING
+    # =========================================================
     try:
-        prompt = f"""
-        Extract structured data from this document.
+        # remove markdown if present
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("```")[1]
 
-        Return ONLY valid JSON:
-        {{
-            "name": "",
-            "dob": "",
-            "document_type": "",
-            "pan_number": "",
-            "relationship": ""
-        }}
-
-        Text:
-        {text}
-        """
-
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-
-        content = response.choices[0].message.content
-
-        # 🔥 IMPORTANT: convert string → dict
         return json.loads(content)
 
-    except Exception as e:
-        print("AI ERROR:", str(e))
+    except Exception:
+        log_event("AI_PARSE_FAILED", {"raw": content[:200]}, level="error")
         return {}
 
 
@@ -108,12 +130,7 @@ def ai_extract_fields(text):
 # 🔀 VARIANT DETECTION
 # =========================================================
 def detect_variant(text, category):
-    """
-    Detects document variant (layout/version)
-
-    Example:
-        PAN_V1 vs PAN_QR vs PAN_NEW
-    """
+    text = text or ""
 
     variants = DocumentVariant.objects.filter(category__name=category)
 
@@ -123,7 +140,7 @@ def detect_variant(text, category):
     for variant in variants:
         score = 0
 
-        for keyword in variant.keywords:
+        for keyword in (variant.keywords or []):
             if keyword.lower() in text.lower():
                 score += 1
 
@@ -138,14 +155,10 @@ def detect_variant(text, category):
 # 🧠 CATEGORY CLASSIFICATION
 # =========================================================
 def classify_document(text):
-    """
-    Classifies document based on keyword matching.
+    text = (text or "").lower()
 
-    Returns:
-        (category_name, confidence_score)
-    """
+    log_event("CLASSIFY_START", {"text_preview": text[:50]})
 
-    text = text.lower()
     categories = DocumentCategory.objects.all()
 
     best_match = None
@@ -154,7 +167,7 @@ def classify_document(text):
     for category in categories:
         score = 0
 
-        for keyword in category.keywords:
+        for keyword in (category.keywords or []):
             if keyword.lower() in text:
                 score += 1
 
@@ -164,48 +177,40 @@ def classify_document(text):
 
     if best_match:
         confidence = best_score / max(len(best_match.keywords), 1)
+
+        log_event("CLASSIFY_RESULT", {
+            "category": best_match.name,
+            "confidence": confidence
+        })
+
         return best_match.name, confidence
 
+    log_event("CLASSIFY_RESULT", {"category": "Unknown"})
     return "Unknown", 0.0
 
 
 # =========================================================
-# 🧠 RULE-BASED DATA EXTRACTION
+# 🧠 RULE-BASED EXTRACTION
 # =========================================================
 def extract_structured_data(text):
-    """
-    Extracts structured fields using regex + heuristics.
-
-    Current fields:
-    - PAN number
-    - DOB
-    - Name
-
-    Returns:
-        dict
-    """
-
     data = {}
+
+    if not text:
+        return {}
 
     lines = [line.strip() for line in text.split("\n") if line.strip()]
 
-    # ===============================
-    # PAN NUMBER
-    # ===============================
+    # PAN
     pan_match = re.search(r'\b[A-Z]{5}[0-9]{4}[A-Z]\b', text)
     if pan_match:
         data['pan_number'] = pan_match.group()
 
-    # ===============================
-    # DATE OF BIRTH
-    # ===============================
+    # DOB
     dob_match = re.search(r'\b\d{2}/\d{2}/\d{4}\b', text)
     if dob_match:
         data['dob'] = dob_match.group()
 
-    # ===============================
-    # NAME DETECTION (HEURISTIC)
-    # ===============================
+    # NAME
     for line in lines:
         clean_line = re.sub(r'[^A-Z ]', '', line.upper())
 
@@ -226,13 +231,7 @@ def extract_structured_data(text):
 # 🧠 HEURISTIC CATEGORY SUGGESTION
 # =========================================================
 def suggest_new_category(text):
-    """
-    Suggests new category when classification fails.
-
-    Used as fallback before AI or admin creation.
-    """
-
-    text = text.lower()
+    text = (text or "").lower()
 
     if "bank" in text and "statement" in text:
         return "Bank Statement"
@@ -250,22 +249,14 @@ def suggest_new_category(text):
 # 🧠 OCR ENGINE
 # =========================================================
 def extract_text(file_path):
-    """
-    Extracts text from image using Tesseract OCR.
-
-    Returns:
-        string (cleaned text)
-    """
-
     try:
         image = Image.open(file_path)
+        text = pytesseract.image_to_string(image) or ""
 
-        text = pytesseract.image_to_string(image)
-
-        print("OCR TEXT:", text)
+        log_event("OCR_COMPLETED", {"length": len(text)})
 
         return text.strip()
 
     except Exception as e:
-        print("OCR ERROR:", str(e))
+        log_event("OCR_ERROR", {"error": str(e)}, level="error")
         return ""
