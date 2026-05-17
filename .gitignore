@@ -2,15 +2,22 @@
 __pycache__/
 *.pyc
 
-# Virtual env
+# Virtual Environment
 .venv/
 
-# Django
+# Logs
+logs/
+*.log
+
+# Media uploads
+media/
+
+# Database
 db.sqlite3
-/media/
 
 # IDE
 .idea/
+.vscode/
 
-# Env
+# Environment
 .env
