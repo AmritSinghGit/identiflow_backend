@@ -1,3 +1,12 @@
+"""
+📦 documents/serializers.py
+
+Controls:
+- API exposure
+- Data masking
+- Final vs raw data separation
+"""
+
 from rest_framework import serializers
 from .models import Document
 
@@ -14,6 +23,8 @@ class DocumentSerializer(serializers.ModelSerializer):
             'file_hash',
             'created_at',
             'updated_at',
+
+            # System controlled
             'owner_name',
             'document_category',
             'extracted_data',
@@ -22,21 +33,28 @@ class DocumentSerializer(serializers.ModelSerializer):
             'confidence_score',
             'variant_name',
             'suggested_category',
-            'review_status',
-            'reviewed_data',
             'ai_confidence_score',
+
+            # User flow controlled
+            'reviewed_data'
         ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
 
-        # 🔥 FINAL DATA LOGIC (IMPORTANT)
-        if instance.review_status == 'approved':
-            data['final_data'] = instance.reviewed_data
+        # =========================================================
+        # 🧠 FINAL DATA LOGIC
+        # =========================================================
+        if instance.user_confirmation_status == 'corrected':
+            data["final_data"] = instance.user_corrected_data
+        elif instance.user_confirmation_status == 'confirmed':
+            data["final_data"] = instance.extracted_data
         else:
-            data['final_data'] = None
+            data["final_data"] = None
 
-        # 🔍 Optional: show masked preview (we'll enhance later)
+        # =========================================================
+        # 🔐 MASK SENSITIVE DATA (LIGHT MASKING)
+        # =========================================================
         extracted = data.get("extracted_data", {})
 
         if "pan_number" in extracted:
@@ -54,8 +72,11 @@ class DocumentSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # Owner always comes from request, not user input
+        """
+        Ensures owner is always the logged-in user
+        """
         request = self.context.get('request')
+
         if request and hasattr(request, 'user'):
             validated_data['owner'] = request.user
 
