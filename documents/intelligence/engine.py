@@ -78,7 +78,12 @@ def process_document_intelligence(document):
     document.confidence_score = calculate_confidence(final_data)
 
     # =========================================================
-    # 🧠 STEP 6 — DEBUG (REMOVE IN PROD LATER)
+    # 🧠 STEP 6 — REVIEW DECISION ENGINE
+    # =========================================================
+    apply_review_logic(document)
+
+    # =========================================================
+    # 🧠 STEP 7 — DEBUG (REMOVE IN PROD LATER)
     # =========================================================
     print("\n===== INTELLIGENCE ENGINE =====")
     print("Use AI:", use_ai)
@@ -90,7 +95,12 @@ def process_document_intelligence(document):
     print("================================\n")
 
     # =========================================================
-    # 💾 STEP 7 — SAVE
+    # 🧠 STEP 7 — LEARNING SIGNAL (RAW)
+    # =========================================================
+    log_learning_event(document)
+
+    # =========================================================
+    # 💾 STEP 8 — SAVE
     # =========================================================
     document.save()
 
@@ -133,3 +143,71 @@ def should_use_ai(document, extracted_data):
     # DEFAULT → USE AI
     # ---------------------------------------------------------
     return True
+
+# =========================================================
+# 🧠 REVIEW DECISION ENGINE
+# =========================================================
+def apply_review_logic(document):
+    """
+    Determines verification flow based on confidence + risk.
+
+    This is the CORE of trust system.
+    """
+
+    confidence = document.confidence_score
+
+    # -----------------------------------------------------
+    # HIGH CONFIDENCE → AUTO VERIFY
+    # -----------------------------------------------------
+    if confidence >= 0.9:
+        document.review_status = "review_approved"
+        document.is_verified = True
+        document.reviewed_data = document.extracted_data
+        document.required_reviewers = 0
+
+    # -----------------------------------------------------
+    # MEDIUM CONFIDENCE → USER CONFIRMATION
+    # -----------------------------------------------------
+    elif 0.7 <= confidence < 0.9:
+        document.review_status = "user_confirmed"
+        document.required_reviewers = 0
+
+    # -----------------------------------------------------
+    # LOW CONFIDENCE → SINGLE REVIEWER
+    # -----------------------------------------------------
+    elif 0.5 <= confidence < 0.7:
+        document.review_status = "under_review"
+        document.required_reviewers = 1
+
+    # -----------------------------------------------------
+    # VERY LOW CONFIDENCE → MULTI REVIEW
+    # -----------------------------------------------------
+    else:
+        document.review_status = "high_risk_review"
+        document.required_reviewers = 2
+
+# =========================================================
+# 🧠 LEARNING LOGGER (FOUNDATION)
+# =========================================================
+def log_learning_event(document):
+    """
+    Logs data for future AI training.
+
+    This will later:
+    - feed ML models
+    - improve extraction
+    - improve classification
+    """
+
+    learning_payload = {
+        "document_id": str(document.id),
+        "category": document.document_category,
+        "confidence": document.confidence_score,
+        "ai_used": document.ai_used,
+        "extracted_data": document.extracted_data,
+        "review_status": document.review_status
+    }
+
+    print("\n===== LEARNING EVENT =====")
+    print(learning_payload)
+    print("==========================\n")
