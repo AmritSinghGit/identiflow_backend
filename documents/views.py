@@ -20,6 +20,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from .models import Document
 from .serializers import DocumentSerializer
+from .intelligence.engine import process_document_intelligence
 
 import hashlib
 
@@ -185,10 +186,19 @@ class DocumentUploadView(generics.CreateAPIView):
 
             document.save()
 
+            # =========================================================
+            # 🔥 STEP 15 — INTELLIGENCE LAYER (POST PROCESSING)
+            # =========================================================
+            process_document_intelligence(document)
+
+            # =========================================================
+            # 📤 FINAL RESPONSE
+            # =========================================================
             return Response(
                 DocumentSerializer(document).data,
                 status=status.HTTP_201_CREATED
             )
+
 
         except Exception as e:
             print("FULL ERROR:", str(e))
