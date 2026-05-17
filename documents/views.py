@@ -267,3 +267,74 @@ class DocumentUpdateView(generics.UpdateAPIView):
 
     def get_queryset(self):
         return Document.objects.filter(owner=self.request.user)
+
+
+# =========================================================
+# 🧠 USER CONFIRMATION API (CRITICAL)
+# =========================================================
+class DocumentConfirmView(generics.UpdateAPIView):
+    """
+    Handles user confirmation / correction of extracted data.
+
+    🧠 PURPOSE:
+    - Capture ground truth
+    - Improve future AI accuracy
+    - Build proprietary dataset
+
+    INPUT:
+    {
+        "action": "confirm" OR "correct",
+        "data": { ... corrected fields ... }
+    }
+    """
+
+    serializer_class = DocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        return Document.objects.filter(owner=self.request.user)
+
+    def update(self, request, *args, **kwargs):
+        document = self.get_object()
+
+        action = request.data.get("action")
+        corrected_data = request.data.get("data", {})
+
+        # =========================================================
+        # ✅ CASE 1 — USER CONFIRMS
+        # =========================================================
+        if action == "confirm":
+            document.user_confirmation_status = "confirmed"
+            document.reviewed_data = document.extracted_data
+
+        # =========================================================
+        # ✏️ CASE 2 — USER CORRECTS
+        # =========================================================
+        elif action == "correct":
+            document.user_confirmation_status = "corrected"
+            document.user_corrected_data = corrected_data
+            document.reviewed_data = corrected_data
+
+        else:
+            return Response(
+                {"error": "Invalid action"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # =========================================================
+        # 🧠 FINAL DATA (TRUSTED)
+        # =========================================================
+        document.is_verified = True
+        document.save()
+
+        # =========================================================
+        # 🧠 LEARNING HOOK (NEXT STEP)
+        # =========================================================
+        from .learning import record_learning
+        record_learning(document)
+
+        return Response(
+            DocumentSerializer(document).data,
+            status=status.HTTP_200_OK
+        )

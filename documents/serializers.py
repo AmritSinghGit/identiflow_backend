@@ -43,17 +43,15 @@ class DocumentSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
 
         # =========================================================
-        # 🧠 FINAL DATA LOGIC
+        # 🔥 FINAL DATA LOGIC
         # =========================================================
-        if instance.user_confirmation_status == 'corrected':
-            data["final_data"] = instance.user_corrected_data
-        elif instance.user_confirmation_status == 'confirmed':
-            data["final_data"] = instance.extracted_data
+        if instance.is_verified:
+            data['final_data'] = instance.reviewed_data
         else:
-            data["final_data"] = None
+            data['final_data'] = None
 
         # =========================================================
-        # 🔐 MASK SENSITIVE DATA (LIGHT MASKING)
+        # 🔒 MASKING (PRESENTATION ONLY)
         # =========================================================
         extracted = data.get("extracted_data", {})
 

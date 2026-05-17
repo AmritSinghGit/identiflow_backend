@@ -70,6 +70,9 @@ class Document(models.Model):
     # Variant (e.g., PAN_V1, PAN_QR, etc.)
     variant_name = models.CharField(max_length=100, blank=True)
 
+    # Verified by Uploader Yes
+    is_verified = models.BooleanField(default=False)
+
     # =========================================================
     # 🧠 SYSTEM OUTPUT (RULE-BASED)
     # =========================================================
@@ -116,17 +119,26 @@ class Document(models.Model):
     # =========================================================
     # ✅ FINAL TRUSTED DATA
     # =========================================================
-    """
-    This is the MOST IMPORTANT layer.
-
-    It represents:
-    - Verified
-    - Approved
-    - Trusted data
-
-    This is what downstream systems should use.
-    """
     reviewed_data = models.JSONField(default=dict, blank=True)
+
+    # =========================================================
+    # 🔍 REVIEW WORKFLOW SYSTEM (CRITICAL FOR SCALE)
+    # =========================================================
+    review_status = models.CharField(
+        max_length=30,
+        choices=[
+            ('pending', 'Pending'),
+            ('user_confirmed', 'User Confirmed'),
+            ('under_review', 'Under Review'),
+            ('review_approved', 'Review Approved'),
+            ('review_rejected', 'Review Rejected'),
+            ('high_risk_review', 'High Risk Review')
+        ],
+        default='pending'
+    )
+
+    # Number of reviewers required (dynamic based on confidence)
+    required_reviewers = models.IntegerField(default=1)
 
     # =========================================================
     # ⚙️ SETTINGS SNAPSHOT (IMPORTANT FOR AUDIT)
@@ -290,6 +302,45 @@ class UserSettings(models.Model):
 
     Default = system standard (0.85)
     """
+
+    # =========================================================
+    # 🧠 DOCUMENT REVIEW (MULTI-REVIEW SYSTEM)
+    # =========================================================
+    class DocumentReview(models.Model):
+        """
+        Stores reviewer decisions for documents.
+
+        Enables:
+        - Multi-review workflows
+        - Audit logs
+        - Conflict resolution
+        """
+
+        document = models.ForeignKey(
+            Document,
+            on_delete=models.CASCADE,
+            related_name="reviews"
+        )
+
+        reviewer = models.ForeignKey(
+            User,
+            on_delete=models.CASCADE
+        )
+
+        decision = models.CharField(
+            max_length=20,
+            choices=[
+                ('approved', 'Approved'),
+                ('rejected', 'Rejected')
+            ]
+        )
+
+        comments = models.TextField(blank=True)
+
+        created_at = models.DateTimeField(auto_now_add=True)
+
+        def __str__(self):
+            return f"{self.document.id} - {self.decision} by {self.reviewer.username}"
 
     # =========================================================
     # 🧠 AI USAGE LEVEL (COST CONTROL)
